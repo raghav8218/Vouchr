@@ -7,7 +7,17 @@ from src.models import ExtractedInvoice
 
 load_dotenv()
 
-# Centralized model variable - can be overridden via GEMINI_MODEL in .env
+# Cloud deployment compatibility: populate os.environ from Streamlit secrets if present
+try:
+    import streamlit as st
+    if hasattr(st, "secrets"):
+        for key in ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GEMINI_MODEL"]:
+            if key in st.secrets and key not in os.environ:
+                os.environ[key] = str(st.secrets[key])
+except Exception:
+    pass
+
+# Centralized model variable - can be overridden via GEMINI_MODEL in .env or secrets
 DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
 
 EXTRACTION_PROMPT = """

@@ -1,5 +1,6 @@
 import os
 import shutil
+import base64
 import pandas as pd
 import streamlit as st
 from datetime import date
@@ -27,7 +28,7 @@ from src.gmail import fetch_invoices_from_gmail
 
 # Page configuration
 st.set_page_config(
-    page_title="Invoice Processing Agent",
+    page_title="Vouchr - Invoice Processing Agent",
     layout="wide",
 )
 
@@ -110,6 +111,21 @@ with st.sidebar:
                 st.rerun()
 
     st.divider()
+    st.markdown("### Upload Invoice")
+    uploaded = st.file_uploader(
+        "Upload PDF or image invoice",
+        type=["pdf", "png", "jpg", "jpeg"],
+        key="invoice_uploader",
+    )
+    if uploaded is not None:
+        target_path = os.path.join(INBOX_DIR, uploaded.name)
+        if not os.path.exists(target_path):
+            with open(target_path, "wb") as f:
+                f.write(uploaded.getbuffer())
+            st.success(f"Added {uploaded.name} to inbox.")
+            st.rerun()
+
+    st.divider()
     st.markdown("### Storage Locations")
     st.text(f"Inbox:        {INBOX_DIR}")
     st.text(f"Success:      {SUCCESS_DIR}")
@@ -118,7 +134,7 @@ with st.sidebar:
 
 
 # --- Main Dashboard ---
-st.title("Invoice Processing Dashboard")
+st.title("Vouchr - Invoice Processing Dashboard")
 st.write("Autonomous invoice extraction, verification, and human-in-the-loop audit system.")
 
 # Fetch data
@@ -203,59 +219,78 @@ with tab_review:
             flag_reason = log_row["details"] if log_row else "Flagged for manual review."
 
         st.error(f"Reason for review: {flag_reason}")
-        st.caption(f"File: {file_path}")
 
-        # Human correction form
-        with st.form("manual_approval_form"):
+        # Side-by-side layout: Document Preview on Left, Correction Form on Right
+        col_preview, col_form = st.columns([1, 1], gap="medium")
+
+        with col_preview:
+            st.markdown("#### Document Preview")
+            if selected_file.lower().endswith(".pdf"):
+                try:
+                    with open(file_path, "rb") as f:
+                        pdf_bytes = f.read()
+                        b64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
+                    pdf_display = f'<iframe src="data:application/pdf;base64,{b64_pdf}" width="100%" height="550" type="application/pdf"></iframe>'
+                    st.markdown(pdf_display, unsafe_allow_html=True)
+                    st.download_button(
+                        label="Download PDF File",
+                        data=pdf_bytes,
+                        file_name=selected_file,
+                        mime="application/pdf",
+                    )
+                except Exception as e:
+                    st.warning(f"Could not load PDF preview: {e}")
+            elif selected_file.lower().endswith((".png", ".jpg", ".jpeg")):
+                st.image(file_path, use_container_width=True)
+
+        with col_form:
             st.markdown("#### Review & Correct Data")
-            col_a, col_b = st.columns(2)
-
-            with col_a:
+            with st.form("manual_approval_form"):
                 v_name = st.text_input("Vendor Name (Required)")
-                inv_num = st.text_input("Invoice Number")
+                inv_num = st.text_input("Invoice Number (Required)")
                 currency = st.selectbox("Currency", ["USD", "EUR", "GBP", "INR", "CAD", "AUD"])
-
-            with col_b:
                 inv_date = st.date_input("Invoice Date", value=date.today())
                 due_d = st.date_input("Due Date (Optional)", value=None)
                 amount_str = st.text_input("Amount (e.g. 1500.00)")
 
-            approved = st.form_submit_button("Approve & Save to Database", type="primary")
+                approved = st.form_submit_button("Approve & Save to Database", type="primary")
 
-            if approved:
-                if not v_name.strip():
-                    st.error("Vendor Name is required.")
-                elif not amount_str.strip():
-                    st.error("Amount is required.")
-                else:
-                    try:
-                        raw = ExtractedInvoice(
-                            vendor_name=v_name.strip(),
-                            invoice_number=inv_num.strip() or None,
-                            invoice_date=str(inv_date),
-                            due_date=str(due_d) if due_d else None,
-                            amount=amount_str.strip(),
-                            currency=currency,
-                        )
-                        record = build_validated_record(raw, file_path)
-                        rec_id = save_invoice(record)
-                        verify_invoice(rec_id, record)
+                if approved:
+                    if not v_name.strip():
+                        st.error("Vendor Name is required.")
+                    elif not inv_num.strip():
+                        st.error("Invoice Number is required.")
+                    elif not amount_str.strip():
+                        st.error("Amount is required.")
+                    else:
+                        try:
+                            raw = ExtractedInvoice(
+                                vendor_name=v_name.strip(),
+                                invoice_number=inv_num.strip(),
+                                invoice_date=str(inv_date),
+                                due_date=str(due_d) if due_d else None,
+                                amount=amount_str.strip(),
+                                currency=currency,
+                            )
+                            record = build_validated_record(raw, file_path)
+                            rec_id = save_invoice(record)
+                            verify_invoice(rec_id, record)
 
-                        # Move file to success
-                        dest_path = os.path.join(SUCCESS_DIR, selected_file)
-                        shutil.move(file_path, dest_path)
+                            # Move file to success
+                            dest_path = os.path.join(SUCCESS_DIR, selected_file)
+                            shutil.move(file_path, dest_path)
 
-                        # Audit log
-                        log_execution(
-                            selected_file,
-                            "human_review",
-                            "approved",
-                            f"Manually verified and saved as record #{rec_id}",
-                        )
-                        st.success(f"Invoice approved and saved as record #{rec_id}.")
-                        st.rerun()
-                    except Exception as err:
-                        st.error(f"Validation or save failed: {err}")
+                            # Audit log
+                            log_execution(
+                                selected_file,
+                                "human_review",
+                                "approved",
+                                f"Manually verified and saved as record #{rec_id}",
+                            )
+                            st.success(f"Invoice approved and saved as record #{rec_id}.")
+                            st.rerun()
+                        except Exception as err:
+                            st.error(f"Validation or save failed: {err}")
 
 
 # --- Tab 3: Audit Logs ---

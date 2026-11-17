@@ -8,6 +8,7 @@ from src.models import InvoiceRecord
 
 class DatabaseError(Exception):
     # Base exception for database errors
+    # corrupt or disk full, no write perms type shi
     pass
 
 
