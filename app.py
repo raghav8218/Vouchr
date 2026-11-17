@@ -126,6 +126,28 @@ with st.sidebar:
             st.rerun()
 
     st.divider()
+    st.markdown("### Danger Zone")
+    if st.button("Reset All Data & Queues", use_container_width=True):
+        # 1. Clear files from processed folders and inbox
+        for d in [SUCCESS_DIR, HUMAN_REVIEW_DIR, FAILED_DIR, INBOX_DIR]:
+            if os.path.exists(d):
+                for f in os.listdir(d):
+                    fp = os.path.join(d, f)
+                    if os.path.isfile(fp):
+                        try:
+                            os.remove(fp)
+                        except Exception:
+                            pass
+        # 2. Clear SQLite tables
+        with get_connection() as conn:
+            c = conn.cursor()
+            c.execute("DELETE FROM invoices")
+            c.execute("DELETE FROM execution_logs")
+            conn.commit()
+        st.success("All data and review queues cleared successfully.")
+        st.rerun()
+
+    st.divider()
     st.markdown("### Storage Locations")
     st.text(f"Inbox:        {INBOX_DIR}")
     st.text(f"Success:      {SUCCESS_DIR}")
@@ -207,6 +229,16 @@ with tab_review:
 
         selected_file = st.selectbox("Select flagged file to inspect", review_files)
         file_path = os.path.join(HUMAN_REVIEW_DIR, selected_file)
+
+        col_dismiss, _ = st.columns([1, 2])
+        with col_dismiss:
+            if st.button("Delete / Dismiss File", key="dismiss_btn"):
+                try:
+                    os.remove(file_path)
+                    st.success(f"Removed {selected_file}.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed to remove file: {e}")
 
         # Look up reason for failure from audit logs
         with get_connection() as conn:

@@ -32,10 +32,29 @@ Extract all invoice details from this document:
 """
 
 
+def get_api_key() -> Optional[str]:
+    """Retrieves API key dynamically from environment or Streamlit secrets."""
+    key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if key:
+        return key
+    try:
+        import streamlit as st
+        if hasattr(st, "secrets"):
+            return st.secrets.get("GEMINI_API_KEY") or st.secrets.get("GOOGLE_API_KEY")
+    except Exception:
+        pass
+    return None
+
+
 def get_llm(model_name: str = DEFAULT_MODEL) -> ChatGoogleGenerativeAI:
     """Initializes ChatGoogleGenerativeAI with configured model."""
+    api_key = get_api_key()
+    if api_key:
+        os.environ["GOOGLE_API_KEY"] = api_key
+        os.environ["GEMINI_API_KEY"] = api_key
     return ChatGoogleGenerativeAI(
         model=model_name,
+        google_api_key=api_key if api_key else None,
     )
 
 
