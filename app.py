@@ -259,11 +259,18 @@ with tab_review:
             st.markdown("#### Document Preview")
             if selected_file.lower().endswith(".pdf"):
                 try:
+                    import pymupdf
+                    doc = pymupdf.open(file_path)
+                    for page_num in range(len(doc)):
+                        page = doc[page_num]
+                        pix = page.get_pixmap(dpi=150)
+                        st.image(
+                            pix.tobytes("png"),
+                            caption=f"Page {page_num + 1} of {len(doc)}",
+                            use_container_width=True,
+                        )
                     with open(file_path, "rb") as f:
                         pdf_bytes = f.read()
-                        b64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
-                    pdf_display = f'<iframe src="data:application/pdf;base64,{b64_pdf}" width="100%" height="550" type="application/pdf"></iframe>'
-                    st.markdown(pdf_display, unsafe_allow_html=True)
                     st.download_button(
                         label="Download PDF File",
                         data=pdf_bytes,
